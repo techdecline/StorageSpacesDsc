@@ -45,7 +45,7 @@ configuration example_docker_install {
         #region Virtual Disk
         VirtualDisk ClusterDisk01 {
             VirtualDiskName = "disk1"
-            StoragePoolName = "S2D on GLIMSQAAPP"
+            StoragePoolName = "S2D on exampleCluster"
             SizeBytes=5GB
         }
         #endregion
