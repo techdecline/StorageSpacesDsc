@@ -12,7 +12,6 @@ class VirtualDisk {
     [DscProperty(NotConfigurable)]
     [String]$UniqueId
 
-
     
     # Gets the resource's current state.
     [VirtualDisk] Get() {

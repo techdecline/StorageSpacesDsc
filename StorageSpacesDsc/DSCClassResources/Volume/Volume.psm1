@@ -1,63 +1,36 @@
 ﻿[DscResource()]
 class Volume {
-    [DscProperty(Key)]
+    [DscProperty(Mandatory)]
     [string] $VirtualDiskName
 
-    [DscProperty(NotConfigurable)]
-    [int64]$SizeBytes
-
-    [DscProperty(Mandatory)]
+    [DscProperty(Key)]
     [string]$DriveLetter
 
     [DscProperty(Mandatory=$false)]
-    [string]$FileSystem = "NTFS"
+    [string]$FileSystemType = "NTFS"
 
     [DscProperty(NotConfigurable)]
-    [String]$DiskId
+    [string]$OperationalStatus
     
     # Gets the resource's current state.
     [Volume] Get() {
         $ErrorActionPreference = 'Stop'
         try {
-            write-Verbose "Looking up Virtual Disk: $($this.VirtualDiskName)"
-            $diskObject = Get-Disk -FriendlyName $this.VirtualDiskName
-            $this.DiskId = $diskObject.Path
+            $volumeObj = Get-Partition -DiskPath (Get-Disk -FriendlyName $this.VirtualDiskName).path | Where-Object {$this.DriveLetter -eq $_.DriveLetter} | Get-Volume
         }
         catch [System.Management.Automation.ActionPreferenceStopException] {
             throw "No matching disk found"
         }
-        try {
-            Write-Verbose "Reading partitions from virtual disk with Drive Letter: $($this.DriveLetter)"
-            $partitionObj = Get-Partition -DiskId $diskObject.Path | Where-Object {$_.DriveLetter -eq $this.DriveLetter}
-        }
-        catch {
-            throw "No matching partition found"
-        }
-        try {
-            $volume = $partitionObj | Get-Volume
-            $this.SizeBytes = $volume.Size
-            $this.FileSystem = $volume.FileSystem
-        }
-        catch [System.Management.Automation.ActionPreferenceStopException] {
-            Write-Warning "No matching volume found"
-            $this.SizeBytes = $null
-            $this.FileSystem = $null
-        }
+
+        $this.FileSystemType = $volumeObj.FileSystemType
+        $this.OperationalStatus = $volumeObj.OperationalStatus
         return $this
     }
     
     # Sets the desired state of the resource.
     [void] Set() {
-        $ErrorActionPreference = 'Stop'
-        try {
-            $diskObject = Get-Disk -FriendlyName $this.VirtualDiskName
-            $diskObject | New-Partition -UseMaximumSize -DriveLetter $this.DriveLetter
-        }
-        catch [System.Management.Automation.ActionPreferenceStopException] {
-            throw "Could not create Partition: $($error[0].exception.message)"
-        }
-        
         # Check for Cluster
+        $diskObject = Get-Disk -FriendlyName $this.VirtualDiskName
         $isClustered = $false
         if ($diskObject.IsClustered) {
             $isClustered = $true
@@ -65,12 +38,12 @@ class Volume {
             Get-ClusterResource -Name "Cluster Virtual Disk ($($this.VirtualDiskName))" | Suspend-ClusterResource
         }
         else {
-            write-verbose "Disk Resource is not clustered. Will set to maintenance mode."
+            write-verbose "Disk Resource is not clustered."
         }
 
         try {
             Write-Verbose "Partitioning Volume: $($this.DriveLetter)"
-            Get-Partition -DriveLetter $this.DriveLetter | Format-Volume -FileSystem $this.FileSystem -NewFileSystemLabel $this.VirtualDiskName
+            Get-Partition -DriveLetter $this.DriveLetter | Format-Volume -FileSystem $this.FileSystemType -NewFileSystemLabel $this.VirtualDiskName
         }
         catch [System.Management.Automation.ActionPreferenceStopException] {
             throw "Could not format partition"
@@ -86,7 +59,7 @@ class Volume {
     [bool] Test() {
         $ErrorActionPreference = 'Stop'
         $volume = $this.Get()
-        if ($volume.FileSystem -eq $this.FileSystem) {
+        if ($volume.OperationalStatus -eq "OK") {
             return $true
         }
         else {
